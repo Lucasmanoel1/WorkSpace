@@ -1,33 +1,49 @@
-# Etapa 1: deps
+# ---- 1) Deps (instala apenas uma vez) ----
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# Etapa 2: build
+# ---- 2) Builder (gera Prisma Clients + build do Next) ----
 FROM node:20-alpine AS builder
 WORKDIR /app
+
+# Copia node_modules e o código
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Gere o Prisma Client (sem depender do .env)
-RUN DATABASE_URL="postgresql://fake:fake@localhost:5432/fake" \
-    npx prisma generate --schema=prisma/schema.prisma
+# <<< IMPORTANTE >>>  Variáveis FAKE para o passo de "prisma generate"
+# Alguns loaders exigem essas ENV mesmo quando você gera só um dos clients
+ENV DATABASE_URL="postgresql://fake:fake@localhost:5432/fake"
+ENV AUTH_DATABASE_URL="postgresql://fake:fake@localhost:5432/fake"
 
-# Next build
+# Gera os DOIS Prisma Clients (auth + app)
+RUN npx prisma generate --schema=prisma/auth/schema.prisma
+RUN npx prisma generate --schema=prisma/schema.prisma
+
+# Build do Next
 RUN npm run build
 
-# Etapa 3: runtime
+# ---- 3) Runner (produção) ----
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# copie do builder (importantíssimo, tem o client gerado!)
-COPY --from=builder /app/node_modules ./node_modules
+# Apenas deps de produção
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+# Copia artefatos de runtime
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/package.json ./
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
+# Porta do Next
 EXPOSE 3000
-CMD ["npm","run","start"]
+
+# Aplica as migrations (auth + app) e inicia
+CMD sh -c "npx prisma migrate deploy --schema=prisma/auth/schema.prisma && \
+           npx prisma migrate deploy --schema=prisma/schema.prisma && \
+           npm run start"

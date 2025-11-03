@@ -1,36 +1,36 @@
-version: "3.8"
-
 services:
-  postgres:
-    image: postgres:15
-    container_name: postgres_db
+  db:
+    image: postgres:16-alpine
+    container_name: ws_pg
     environment:
-      POSTGRES_DB: painel_db
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: senha_segura
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: secret
     ports:
-      - "5432:5432"
+      - "5432:5432"        # opcional expor p/ seu host
     volumes:
-      - postgres_data:/var/lib/postgresql/data"
+      - pgdata:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
 
-  app:
+  workspace-ui:
     build:
-      context: ./app
+      context: ./workspace-ui
       dockerfile: Dockerfile
-    container_name: next_app
-    environment:
-      # Ajuste se for usar isso no frontend
-      DATABASE_URL: "postgresql://admin:senha_segura@postgres:5432/painel_db"
-      NODE_ENV: "production"
+    container_name: ws_ui
+    # usa as variáveis reais em runtime
+    env_file:
+      - ./workspace-ui/.env
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "3000:3000"
-    depends_on:
-      - postgres
-    # Para produção, geralmente NÃO montamos o código.
-    # Se quiser modo dev (hot reload), troque por:
-    # volumes:
-    #   - ./app:/app
-    #   - /app/node_modules
+    restart: unless-stopped
 
 volumes:
-  postgres_data:
+  pgdata:

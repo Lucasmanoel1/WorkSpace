@@ -1,0 +1,60 @@
+generator appClient {
+  provider = "prisma-client-js"
+  output   = "./generated/app-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/**
+ * Widgets configuráveis no seu dashboard privado (/, workspace)
+ * Ex.: weather, forex, news etc.
+ */
+model Widget {
+  id        String   @id @default(cuid())
+  kind      String // "weather" | "forex" | "news" | ...
+  config    Json // params (cidade, pares de moedas, fontes de notícias etc.)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/**
+ * Cache opcional de dados externos (pra não bater na API a cada request)
+ */
+model ExternalCache {
+  key       String   @id
+  data      Json
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/**
+ * Logs simples (auditoria, debug)
+ */
+model AuditLog {
+  id        String   @id @default(cuid())
+  actor     String? // id do user (se quiser referenciar do auth por string)
+  action    String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([actor])
+  @@index([createdAt])
+}
+
+/**
+ * Chaves internas para consumir suas próprias rotas (/api/*) ou webhooks
+ */
+model ApiKey {
+  id        String   @id @default(cuid())
+  name      String
+  hash      String   @unique
+  scopes    String[] // ["read:widgets","write:widgets",...]
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
